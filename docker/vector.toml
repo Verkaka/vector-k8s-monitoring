@@ -1,0 +1,71 @@
+# Vector 配置 - Docker 环境
+
+# ==================== 数据源 ====================
+
+# Docker 日志收集
+[sources.docker_logs]
+type = "docker_logs"
+exclude_containers = ["vector", "prometheus", "grafana", "node-exporter"]
+
+# Docker 指标收集
+[sources.docker_metrics]
+type = "docker_metrics"
+
+# 系统指标
+[sources.host_metrics]
+type = "host_metrics"
+filesystem.enabled = true
+network.enabled = true
+cpu.enabled = true
+memory.enabled = true
+disk.enabled = true
+
+# Vector 内部指标
+[sources.vector_metrics]
+type = "internal_metrics"
+
+# ==================== 转换 ====================
+
+# 丰富 Docker 日志
+[transforms.docker_enrich]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+.container_name = .docker.container.name
+.image = .docker.container.image
+.container_id = .docker.container.id
+'''
+
+# 聚合指标
+[transforms.metrics_aggregate]
+type = "metric_to_metric"
+inputs = ["host_metrics", "docker_metrics"]
+aggregation.kind = "delta"
+
+# ==================== Prometheus Exporter ====================
+
+# 暴露 Prometheus 格式 metrics
+[sinks.prometheus_exporter]
+type = "prometheus_exporter"
+inputs = ["vector_metrics", "metrics_aggregate"]
+address = "0.0.0.0:9090"
+namespace = "vector"
+default_namespace = "vector"
+
+# ==================== 控制台输出（调试用） ====================
+
+[sinks.console]
+type = "console"
+inputs = ["docker_enrich"]
+encoding.codec = "json"
+
+# ==================== 日志文件输出 ====================
+
+[sinks.log_file]
+type = "file"
+inputs = ["docker_enrich"]
+path = "/var/log/vector/output-{{timestamp}}.log"
+encoding.codec = "json"
+rotation.strategy = "size"
+rotation.max_size = 10485760  # 10MB
+rotation.max_files = 5
