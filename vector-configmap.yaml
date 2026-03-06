@@ -1,0 +1,62 @@
+# Vector 配置 - 启用 Prometheus Metrics
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: monitoring
+data:
+  vector.toml: |
+    # ==================== 数据源 ====================
+    # 收集 Kubernetes 日志
+    [sources.k8s_logs]
+    type = "kubernetes_logs"
+    rotate_wait_secs = 5
+    max_line_bytes = 15000
+    auto_partial_merge = true
+    
+    # 收集 Kubernetes 指标
+    [sources.k8s_metrics]
+    type = "kubernetes_logs"
+    pod_annotation_fields.container_image = "container_image"
+    pod_annotation_fields.container_name = "container_name"
+    
+    # ==================== 转换 ====================
+    # 日志解析和丰富
+    [transforms.k8s_enrich]
+    type = "remap"
+    inputs = ["k8s_logs"]
+    source = '''
+    .kubernetes.pod_name = del(.kubernetes.pod_uid)
+    .kubernetes.namespace_name = del(.kubernetes.pod_namespace)
+    '''
+    
+    # ==================== Metrics 源 ====================
+    # Vector 内部指标
+    [sources.vector_metrics]
+    type = "internal_metrics"
+    
+    # ==================== Prometheus Exporter ====================
+    # 暴露 Prometheus 格式的 metrics
+    [sinks.prometheus_exporter]
+    type = "prometheus_exporter"
+    inputs = ["vector_metrics"]
+    address = "0.0.0.0:9090"
+    namespace = "vector"
+    
+    # ==================== 日志输出 ====================
+    # 输出到 Loki (可选)
+    [sinks.loki]
+    type = "loki"
+    inputs = ["k8s_enrich"]
+    endpoint = "http://loki:3100"
+    encoding.codec = "json"
+    labels.pod = "{{ kubernetes.pod_name }}"
+    labels.namespace = "{{ kubernetes.namespace_name }}"
+    labels.container = "{{ kubernetes.container_name }}"
+    
+    # 输出到 Elasticsearch (可选)
+    [sinks.elasticsearch]
+    type = "elasticsearch"
+    inputs = ["k8s_enrich"]
+    endpoints = ["http://elasticsearch:9200"]
+    index = "vector-logs-%Y.%m.%d"

@@ -1,0 +1,51 @@
+# Prometheus ServiceMonitor - 自动发现 Vector Metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vector
+  namespace: monitoring
+  labels:
+    app: vector
+    release: prometheus  # 根据你的 Prometheus release 名称调整
+spec:
+  selector:
+    matchLabels:
+      app: vector
+      component: agent
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      scheme: http
+      metricRelabelings:
+        # 保留 vector 相关的 metrics
+        - sourceLabels: [__name__]
+          regex: "vector_.*"
+          action: keep
+
+---
+# 或者使用 PodMonitor (如果使用 DaemonSet)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: vector
+  namespace: monitoring
+  labels:
+    app: vector
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: vector
+      component: agent
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      scheme: http
