@@ -14,6 +14,7 @@ services:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log:/var/log:ro
+      - vector_data:/var/lib/vector
     environment:
       - VECTOR_SELF_NODE_NAME=docker-host
       - VECTOR_SELF_POD_NAME=vector
@@ -110,4 +111,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  vector_data:
     driver: local
