@@ -1,0 +1,184 @@
+# Vector 告警规则
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vector-alerts
+  namespace: monitoring
+  labels:
+    app: vector
+    release: prometheus
+spec:
+  groups:
+    - name: vector.rules
+      interval: 30s
+      rules:
+        # ==================== 可用性告警 ====================
+        - alert: VectorPodDown
+          expr: absent(vector_build_info)
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Vector Pod 不可用"
+            description: "Vector Pod 已经停止运行超过 5 分钟"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorpoddowm"
+        
+        - alert: VectorPodsNotReady
+          expr: |
+            count(vector_build_info) < 3
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector Pod 数量不足"
+            description: "当前只有 {{ $value }} 个 Vector Pod 在运行"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorpodsnotready"
+        
+        # ==================== 错误率告警 ====================
+        - alert: VectorHighErrorRate
+          expr: |
+            sum(rate(vector_component_errors_total[5m])) 
+            / 
+            (sum(rate(vector_processed_events_total[5m])) + 1) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector 错误率高"
+            description: "Vector 错误率超过 1% (当前值：{{ $value | humanizePercentage }})"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorhigherrorrate"
+        
+        - alert: VectorCriticalErrors
+          expr: |
+            sum(rate(vector_component_errors_total[1m])) > 10
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Vector 严重错误"
+            description: "Vector 每分钟错误数超过 10 个 (当前值：{{ $value }} errors/min)"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorcriticalerrors"
+        
+        # ==================== 性能告警 ====================
+        - alert: VectorNoEvents
+          expr: |
+            sum(rate(vector_processed_events_total[5m])) == 0
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector 没有处理事件"
+            description: "Vector 已经超过 10 分钟没有处理任何事件"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectornoevents"
+        
+        - alert: VectorLowThroughput
+          expr: |
+            sum(rate(vector_processed_events_total[5m])) < 100
+          for: 15m
+          labels:
+            severity: info
+            team: platform
+          annotations:
+            summary: "Vector 吞吐量低"
+            description: "Vector 事件处理率低于 100 events/s (当前值：{{ $value }} events/s)"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorlowthroughput"
+        
+        # ==================== 资源告警 ====================
+        - alert: VectorHighMemoryUsage
+          expr: |
+            container_memory_usage_bytes{container="vector"} 
+            / 
+            container_spec_memory_limit_bytes{container="vector"} > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector 内存使用率高"
+            description: "Vector 内存使用超过 90% (当前值：{{ $value | humanizePercentage }})"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorhighmemoryusage"
+        
+        - alert: VectorMemoryPressure
+          expr: |
+            container_memory_usage_bytes{container="vector"} 
+            / 
+            container_spec_memory_limit_bytes{container="vector"} > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Vector 内存严重不足"
+            description: "Vector 内存使用超过 95%，可能被 OOMKilled (当前值：{{ $value | humanizePercentage }})"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectormempressure"
+        
+        - alert: VectorHighCPUUsage
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{container="vector"}[5m])) 
+            / 
+            count(container_cpu_usage_seconds_total{container="vector"}) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector CPU 使用率高"
+            description: "Vector CPU 使用超过 80% (当前值：{{ $value | humanizePercentage }})"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorhighcpuusage"
+        
+        # ==================== 组件告警 ====================
+        - alert: VectorComponentFailed
+          expr: |
+            vector_component_errors_total > 100
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector 组件故障"
+            description: "组件 {{ $labels.component_name }} 错误数超过 100"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorcomponentfailed"
+        
+        - alert: VectorSinkBackpressure
+          expr: |
+            rate(vector_component_sent_events_total[5m]) == 0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector Sink 背压"
+            description: "组件 {{ $labels.component_name }} 无法发送事件，可能存在背压"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorsinkbackpressure"
+        
+        # ==================== HTTP 告警 ====================
+        - alert: VectorHTTPHighLatency
+          expr: |
+            histogram_quantile(0.95, rate(vector_http_request_duration_seconds_bucket[5m])) > 1
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector HTTP 延迟高"
+            description: "Vector HTTP 请求 P95 延迟超过 1 秒 (当前值：{{ $value }}s)"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorhttphighlatency"
+        
+        - alert: VectorHTTPErrors
+          expr: |
+            sum(rate(vector_http_requests_total{status=~"5.."}[5m])) 
+            / 
+            sum(rate(vector_http_requests_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Vector HTTP 错误率高"
+            description: "Vector HTTP 5xx 错误率超过 5% (当前值：{{ $value | humanizePercentage }})"
+            runbook_url: "https://github.com/Verkaka/vector-k8s-monitoring/blob/main/RUNBOOK.md#vectorhttperrors"
